@@ -1,5 +1,5 @@
 screenshot.png
-credentials.py
+.env
 my_telegram.session
 telegram_messages.csv
 *.pyc

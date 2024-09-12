@@ -1,15 +1,18 @@
+import os
 import pandas as pd
 from telethon import TelegramClient
 from telethon.tl.functions.messages import GetDialogsRequest
 from telethon.tl.types import InputPeerEmpty
 from telethon.tl.functions.messages import GetHistoryRequest
-from credentials import API_ID, API_HASH, PHONE_NUMBER
+from dotenv import load_dotenv
 
-# Replace with your phone number and session file name
+load_dotenv()
+
+API_ID = os.getenv('TELEGRAM_API_ID')
+API_HASH = os.getenv('TELEGRAM_API_HASH')
+PHONE_NUMBER = os.getenv('PHONE_NUMBER')
 
 session_file = 'my_telegram.session'
-
-# Replace with the target group username or ID
 target_group = 1001717037581
 
 async def get_all_messages(client):
@@ -56,7 +59,8 @@ async def get_all_dialogs(client):
 
 async def main():
     client = TelegramClient(session_file, API_ID, API_HASH)
-    await client.start(phone=PHONE_NUMBER)
+    await client.start()
+    # await client.start(phone=PHONE_NUMBER)
     
     # print('Fetching all dialogs...')
     # all_dialogs = await get_all_dialogs(client)
@@ -68,9 +72,7 @@ async def main():
     
     all_messages = await get_all_messages(client)
     print(f'Total messages retrieved: {len(all_messages)}')
-    print(all_messages[0])
     
-    # Create a pandas DataFrame from the messages
     df = pd.DataFrame([
         {
             'id': msg.id,
@@ -84,8 +86,7 @@ async def main():
 
         } for msg in all_messages
     ])
-    
-    # Save the DataFrame as a CSV file
+
     csv_filename = 'telegram_messages.csv'
     df.to_csv(csv_filename, index=False)
     print(f'Messages saved to {csv_filename}')
