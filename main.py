@@ -1,8 +1,9 @@
 import os
 import asyncio
-from dotenv import load_dotenv
 import ccxt.async_support as ccxt
+from dotenv import load_dotenv
 from telethon import TelegramClient, events
+from ccxt.base.errors import OrderNotFound, BadRequest
 
 load_dotenv()
 
@@ -40,13 +41,15 @@ async def process_signal(event):
         side = event.pattern_match.group(2)
         leverage = float(event.pattern_match.group(3))
         entry = float(event.pattern_match.group(4))
-        take_profit_levels = [float(event.pattern_match.group(i)) for i in range(5, 9)]
+        take_profit_prices = [float(event.pattern_match.group(i)) for i in range(5, 9)]
 
         order_side = 'buy' if side == 'Long' else 'sell'
 
         base = symbol.split('/')[1]
         if base != 'USDT':
           raise NameError(f'Wrong base currency: {base}')
+        
+        symbol = symbol.replace('/', '')
         
         # Connect to the exchange
         exchange = ccxt.bybit({
@@ -58,18 +61,18 @@ async def process_signal(event):
         exchange.set_sandbox_mode(True) # remove this in production
         await exchange.load_markets()
 
-        await place_order(exchange, order_side, symbol, leverage, entry, take_profit_levels)
+        await place_order(exchange, order_side, symbol, leverage, entry, take_profit_prices)
 
         await exchange.close()
     except Exception as e:
         print(f"Error: {str(e)}")
 
 
-async def place_order(exchange,side, symbol, leverage, price, take_profit_prices):
+async def place_order(exchange, side, symbol, leverage, price, take_profit_prices):
     # Set leverage
     try:
       await exchange.set_leverage(leverage, symbol)
-    except Exception as e:
+    except BadRequest as e:
       print(f"Error: {str(e)}")
 
     # Calculate the amount
@@ -104,8 +107,16 @@ async def wait_for_order_filled(exchange, order_id):
   status = 'open'
   while status not in ['closed', 'canceled', 'expired', 'rejected']:
     await asyncio.sleep(5)
-    order = await exchange.fetch_order(order_id)
-    status = order['status']
+    try:
+      order = await exchange.fetch_open_order(order_id)
+      status = order['status']
+    except OrderNotFound as e:
+       try: 
+          order = await exchange.fetch_closed_order(order_id)
+          status = order['status']
+       except OrderNotFound as e:
+          print(f"Error: {str(e)}")
+          return None
     print(f"Checking order {order_id} status: {status}")
 
   if order['status'] == 'closed':
