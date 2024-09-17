@@ -88,7 +88,7 @@ async def place_order(exchange,side, symbol, leverage, price, take_profit_prices
       for profit_price, profit_pct in zip(take_profit_prices, profit_pcts):
         take_profit_quanitity = exchange.amount_to_precision(symbol, quantity * profit_pct)
         take_profit_side = 'buy' if side == 'sell' else 'sell'
-        order = await exchange.create_limit_order(symbol, take_profit_side, float(take_profit_quanitity), 120_000)
+        order = await exchange.create_limit_order(symbol, take_profit_side, float(take_profit_quanitity), profit_price)
         print(f"Take profit order placed at {profit_price} for {take_profit_quanitity}: {order['id']}")
 
 
@@ -125,15 +125,6 @@ async def main():
 
   print("Bot is running.")
   await client.run_until_disconnected()
-  # try:
-    # await exchange.load_markets()
-    # await place_order('buy', 'BTCUSDT', 20, 10_000, [11000, 12000, 13000, 14000])
-    # print(exchange.markets)
-    # for market_key, market_value in exchange.markets.items():
-        # if 'BTC/USDT' in market_key:
-            # print(exchange.markets[market_key])
-  # finally:
-    # await exchange.close()
 
 
 if __name__ == '__main__':
