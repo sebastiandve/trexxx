@@ -3,3 +3,4 @@ screenshot.png
 my_telegram.session
 telegram_messages.csv
 *.pyc
+test.py
