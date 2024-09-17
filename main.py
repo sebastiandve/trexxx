@@ -81,7 +81,7 @@ async def place_order(exchange,side, symbol, leverage, price, take_profit_prices
     print(f"Main order placed: {order['id']}")
 
     # Wait for the main order to be filled
-    res = await wait_for_order_filled(order['id'])
+    res = await wait_for_order_filled(exchange, order['id'])
     if res:
       # Place take profit orders
       profit_pcts = [0.4, 0.2, 0.2, 0.2]
@@ -100,7 +100,7 @@ async def calculate_main_order_qty(exchange,leverage, price, symbol):
   return float(exchange.amount_to_precision(symbol, qty))
 
 
-async def wait_for_order_filled(order_id):
+async def wait_for_order_filled(exchange, order_id):
   status = 'open'
   while status not in ['closed', 'canceled', 'expired', 'rejected']:
     await asyncio.sleep(5)
