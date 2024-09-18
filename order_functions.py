@@ -1,27 +1,30 @@
-import asyncio
 import time
+import asyncio
+import logging
 from ccxt.base.errors import OrderNotFound, BadRequest
 from config import STOP_LOSS_ROI, TAKE_PROFIT_PCTS, BALANCE_PCT, ORDER_EXPIRATION_TIME, MONITOR_ORDER_TIME
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 async def place_order(exchange, side, symbol, leverage, price, take_profit_prices):
     # Set leverage
     try:
       await exchange.set_leverage(leverage, symbol)
     except BadRequest as e:
-      print(f"Error: {str(e)}")
+      logging.error(f"Error: {str(e)}")
 
     # Calculate the amount
     quantity = await calculate_main_order_qty(exchange, leverage, price, symbol)
-    print(f"Quantity of quote currency {symbol}: {quantity}")
 
     # Calculate stop loss price
     stop_loss_price = calculate_stop_price(price, STOP_LOSS_ROI, leverage, side)
-    print(f"Stop loss price: {stop_loss_price}")
     params = {'stopLoss': {'type': 'market', 'triggerPrice': stop_loss_price}}
     
     # Place the main order
     order = await exchange.create_limit_order(symbol, side, quantity, price, params=params)
-    print(f"Main order placed: {order['id']}")
+    logging.info(f"{symbol} {side} Order placed: {order['id']} Qty: {quantity} Price: {price} StopLoss: {stop_loss_price}")
 
     # Wait for the main order to be filled
     res = await monitor_order(exchange, order['id'], symbol)
@@ -31,8 +34,8 @@ async def place_order(exchange, side, symbol, leverage, price, take_profit_price
       for profit_price, profit_pct in zip(take_profit_prices, profit_pcts):
         take_profit_quanitity = exchange.amount_to_precision(symbol, quantity * profit_pct)
         take_profit_side = 'buy' if side == 'sell' else 'sell'
-        order = await exchange.create_limit_order(symbol, take_profit_side, float(take_profit_quanitity), profit_price)
-        print(f"Take profit order placed at {profit_price} for {take_profit_quanitity}: {order['id']}")
+        tp_order = await exchange.create_limit_order(symbol, take_profit_side, float(take_profit_quanitity), profit_price)
+        logging.info(f"{symbol} {take_profit_side} TP Order placed: {tp_order['id']} Qty: {take_profit_quanitity} Price: {profit_price}")
 
 
 def calculate_stop_price(entry_price, roi, leverage, side):
@@ -80,20 +83,20 @@ async def monitor_order(exchange, order_id, symbol):
       status = order['status']
       if (status == 'open' and elapsed_time > ORDER_EXPIRATION_TIME):
          await exchange.cancel_order(order_id, symbol)
-         print(f'Order {order_id} in {symbol} was canceled after {elapsed_time}s.')
+         logging.info(f'Order {order_id} in {symbol} was canceled after {elapsed_time}s.')
          return None
     except OrderNotFound as e:
        try: 
           order = await exchange.fetch_closed_order(order_id)
           status = order['status']
        except OrderNotFound as e:
-          print(f"Error: {str(e)}")
+          logging.error(f"Error fetching closed order: {str(e)}")
           return None
-    print(f"Checking order {order_id} status: {status}")
+    logging.info(f"Checking order {order_id} status: {status}")
 
   if order['status'] == 'closed':
-    print(f"Order {order_id} filled")
+    logging.info(f"Order {order_id} was filled")
     return order
   else:
-    print(f"Order {order_id} not filled")
+    logging.info(f"Order {order_id} was not filled")
     return None

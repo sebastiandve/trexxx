@@ -1,12 +1,14 @@
 import os
-import re
 import asyncio
+import logging
 import ccxt.async_support as ccxt
 from dotenv import load_dotenv
 from telethon import TelegramClient, events
 from order_functions import place_order
 
 load_dotenv('.env')
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 API_ID = os.getenv('TELEGRAM_API_ID')
 API_HASH = os.getenv('TELEGRAM_API_HASH')
@@ -33,6 +35,7 @@ client = TelegramClient(SESSION_FILE, API_ID, API_HASH)
 
 @client.on(events.NewMessage(pattern=signal_pattern, chats=[CHAT_ID]))
 async def handle_signal(event):
+  logging.info(f'Received new signal: {event.message.message}')
   asyncio.create_task(process_signal(event))
 
 
@@ -52,6 +55,9 @@ async def process_signal(event):
           raise NameError(f'Wrong base currency: {base}')
         
         symbol = symbol.replace('/', '')
+
+        logging.info(f"Processing signal: {symbol} {order_side} {leverage}x at {entry}")
+
         
         # Connect to the exchange
         exchange = ccxt.bybit({
@@ -66,16 +72,27 @@ async def process_signal(event):
         await place_order(exchange, order_side, symbol, leverage, entry, take_profit_prices)
 
         await exchange.close()
-    except Exception as e:
-        print(f"Error: {str(e)}")
+    except Exception:
+      logging.exception("Error processing signal")
 
 
 async def main():
-  await client.start(phone=PHONE_NUMBER)
-  print("Bot is running.")
-  await client.run_until_disconnected()
+  try:     
+    await client.start(phone=PHONE_NUMBER)
+    logging.info("Bot is running.")
+    await client.run_until_disconnected()
+  except Exception as e:
+     logging.exception("Error in main function")
 
 
 if __name__ == '__main__':
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        logging.info("Bot stopped by user.")
+    except Exception:
+        logging.exception("Unexpected error")
+    finally:
+        loop.close()
+        logging.info("Bot stopped.")
