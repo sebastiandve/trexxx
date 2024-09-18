@@ -1,35 +1,37 @@
 import os
+import re
 import asyncio
 import ccxt.async_support as ccxt
 from dotenv import load_dotenv
 from telethon import TelegramClient, events
 from ccxt.base.errors import OrderNotFound, BadRequest
 
-load_dotenv()
+load_dotenv('.env')
 
 API_ID = os.getenv('TELEGRAM_API_ID')
 API_HASH = os.getenv('TELEGRAM_API_HASH')
-PHONE_NUMBER = os.getenv('PHONE_NUMBER')
+PHONE_NUMBER = os.getenv('TELEGRAM_PHONE_NUMBER')
+CHAT_ID = int(os.getenv('TELEGRAM_CHAT_ID'))
+SESSION_FILE = os.getenv('TELEGRAM_SESSION_FILE')
 
 BYBIT_API_KEY = os.getenv('BYBIT_API_KEY')
 BYBIT_SECRET_KEY = os.getenv('BYBIT_SECRET_KEY')
 
-session_file = 'my_telegram.session'
 
 signal_pattern = r"""^🔥 #(\w+\/\w+) \((Long|Short)(?:📉|📈), x(\d+)\) 🔥
 
-Entry - (\d+\.?\d+)
+Entry - (\d+\.?\d*)
 Take-Profit:
 
-🥉 (\d+\.?\d+) \(40% of profit\)
-🥈 (\d+\.?\d+) \(60% of profit\)
-🥇 (\d+\.?\d+) \(80% of profit\)
-🚀 (\d+\.?\d+) \(100% of profit\)$/m"""
+🥉 (\d+\.?\d*) \(40% of profit\)
+🥈 (\d+\.?\d*) \(60% of profit\)
+🥇 (\d+\.?\d*) \(80% of profit\)
+🚀 (\d+\.?\d*) \(100% of profit\)"""
 
-client = TelegramClient(session_file, API_ID, API_HASH)
+client = TelegramClient(SESSION_FILE, API_ID, API_HASH)
 
 
-@client.on(events.NewMessage(pattern=signal_pattern))
+@client.on(events.NewMessage(pattern=signal_pattern, chats=[CHAT_ID]))
 async def handle_signal(event):
   asyncio.create_task(process_signal(event))
 
@@ -106,7 +108,7 @@ async def calculate_main_order_qty(exchange,leverage, price, symbol):
 async def wait_for_order_filled(exchange, order_id):
   status = 'open'
   while status not in ['closed', 'canceled', 'expired', 'rejected']:
-    await asyncio.sleep(5)
+    await asyncio.sleep(30)
     try:
       order = await exchange.fetch_open_order(order_id)
       status = order['status']
@@ -128,12 +130,7 @@ async def wait_for_order_filled(exchange, order_id):
 
 
 async def main():
-  if not os.path.exists(session_file):
-    print("Session file not found. Creating a new session...")
-    await client.start(phone=PHONE_NUMBER)
-  else:
-    await client.start()
-
+  await client.start(phone=PHONE_NUMBER)
   print("Bot is running.")
   await client.run_until_disconnected()
 

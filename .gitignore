@@ -1,7 +1,7 @@
 screenshot.png
-.env
-my_telegram.session
-my_telegram.session-journal
+.env*
+*.session
+*.session-journal
 telegram_messages.csv
 *.pyc
 test.py
