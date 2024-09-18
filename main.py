@@ -44,7 +44,7 @@ async def process_signal(event):
         # Parse the trade details from the message
         symbol = event.pattern_match.group(1)
         side = event.pattern_match.group(2)
-        leverage = float(event.pattern_match.group(3))
+        leverage = int(event.pattern_match.group(3))
         entry = float(event.pattern_match.group(4))
         take_profit_prices = [float(event.pattern_match.group(i)) for i in range(5, 9)]
 
