@@ -4,7 +4,7 @@ import asyncio
 import ccxt.async_support as ccxt
 from dotenv import load_dotenv
 from telethon import TelegramClient, events
-from ccxt.base.errors import OrderNotFound, BadRequest
+from order_functions import place_order
 
 load_dotenv('.env')
 
@@ -68,65 +68,6 @@ async def process_signal(event):
         await exchange.close()
     except Exception as e:
         print(f"Error: {str(e)}")
-
-
-async def place_order(exchange, side, symbol, leverage, price, take_profit_prices):
-    # Set leverage
-    try:
-      await exchange.set_leverage(leverage, symbol)
-    except BadRequest as e:
-      print(f"Error: {str(e)}")
-
-    # Calculate the amount
-    quantity = await calculate_main_order_qty(exchange, leverage, price, symbol)
-    print(f"Quantity of quote currency {symbol}: {quantity}")
-    
-    # Place the main order
-    order = await exchange.create_limit_order(symbol, side, quantity, price)
-    print(f"Main order placed: {order['id']}")
-
-    # Wait for the main order to be filled
-    res = await wait_for_order_filled(exchange, order['id'])
-    if res:
-      # Place take profit orders
-      profit_pcts = [0.4, 0.2, 0.2, 0.2]
-      for profit_price, profit_pct in zip(take_profit_prices, profit_pcts):
-        take_profit_quanitity = exchange.amount_to_precision(symbol, quantity * profit_pct)
-        take_profit_side = 'buy' if side == 'sell' else 'sell'
-        order = await exchange.create_limit_order(symbol, take_profit_side, float(take_profit_quanitity), profit_price)
-        print(f"Take profit order placed at {profit_price} for {take_profit_quanitity}: {order['id']}")
-
-
-async def calculate_main_order_qty(exchange,leverage, price, symbol):
-  balance = await exchange.fetch_balance()
-  usdt_balance = balance['USDT'] if 'USDT' in balance else None
-  usdt_balance = usdt_balance['free']
-  qty = (usdt_balance * 0.02 * leverage) / price
-  return float(exchange.amount_to_precision(symbol, qty))
-
-
-async def wait_for_order_filled(exchange, order_id):
-  status = 'open'
-  while status not in ['closed', 'canceled', 'expired', 'rejected']:
-    await asyncio.sleep(30)
-    try:
-      order = await exchange.fetch_open_order(order_id)
-      status = order['status']
-    except OrderNotFound as e:
-       try: 
-          order = await exchange.fetch_closed_order(order_id)
-          status = order['status']
-       except OrderNotFound as e:
-          print(f"Error: {str(e)}")
-          return None
-    print(f"Checking order {order_id} status: {status}")
-
-  if order['status'] == 'closed':
-    print(f"Order {order_id} filled")
-    return order
-  else:
-    print(f"Order {order_id} not filled")
-    return None
 
 
 async def main():
