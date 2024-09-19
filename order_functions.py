@@ -23,20 +23,37 @@ async def place_order(exchange, side, symbol, leverage, price, take_profit_price
     params = {'stopLoss': {'type': 'market', 'triggerPrice': stop_loss_price}}
     
     # Place the main order
-    order = await exchange.create_limit_order(symbol, side, quantity, price, params=params)
-    logging.info(f"{symbol} {side} Order placed: {order['id']} Qty: {quantity} Price: {price} StopLoss: {stop_loss_price}")
-
+    try:
+      order = await exchange.create_limit_order(symbol, side, quantity, price, params=params)
+      logging.info(f"{symbol} {side} Order placed: {order['id']} Qty: {quantity} Price: {price} StopLoss: {stop_loss_price}")
+    except Exception as e:
+      logging.error(f"Error placing main order: {str(e)}")
+      return
+    
     # Wait for the main order to be filled
     res = await monitor_order(exchange, order['id'], symbol)
     if res:
       # Place take profit orders
+      tp_orders = []
       profit_pcts = TAKE_PROFIT_PCTS
-      for profit_price, profit_pct in zip(take_profit_prices, profit_pcts):
-        take_profit_quanitity = exchange.amount_to_precision(symbol, quantity * profit_pct)
+      remaining_quantity = quantity
+      for i, (profit_price, profit_pct) in enumerate(zip(take_profit_prices, profit_pcts)):
+        if i == len(profit_pcts) - 1:
+          take_profit_quanitity = remaining_quantity
+        else:
+          take_profit_quanitity = float(exchange.amount_to_precision(symbol, quantity * profit_pct))
+           
+        remaining_quantity -= take_profit_quanitity
         take_profit_side = 'buy' if side == 'sell' else 'sell'
-        tp_order = await exchange.create_limit_order(symbol, take_profit_side, float(take_profit_quanitity), profit_price)
-        logging.info(f"{symbol} {take_profit_side} TP Order placed: {tp_order['id']} Qty: {take_profit_quanitity} Price: {profit_price}")
-
+        try:
+          tp_order = await exchange.create_limit_order(symbol, take_profit_side, take_profit_quanitity, profit_price)
+          tp_orders.append(tp_order)
+          logging.info(f"{symbol} {take_profit_side} TP Order placed: {tp_order['id']} Qty: {take_profit_quanitity} Price: {profit_price}")
+        except Exception as e:
+          logging.error(f"Error placing TP order: {str(e)}")
+      if abs(remaining_quantity) > 0:
+            logging.warning(f"Remaining quantity after placing TP orders: {remaining_quantity}")
+      await monitor_position(exchange, symbol, tp_orders)
 
 def calculate_stop_price(entry_price, roi, leverage, side):
     """
@@ -100,3 +117,33 @@ async def monitor_order(exchange, order_id, symbol):
   else:
     logging.info(f"Order {order_id} was not filled")
     return None
+  
+
+async def monitor_position(exchange, symbol, tp_orders):
+   max_retries = 3
+   retry_count = 0
+   while True:
+      await asyncio.sleep(MONITOR_ORDER_TIME)
+      try:
+        position = await exchange.fetch_position(symbol)
+        if position['contracts'] == 0:
+          logging.info(f"Position in {symbol} was closed.")
+          for tp_order in tp_orders:
+             try:
+                await exchange.cancel_order(tp_order['id'], symbol)
+                logging.info(f"TP Order {tp_order['id']} in {symbol} was canceled.")
+             except OrderNotFound as e:
+                logging.error(f"Error canceling TP order: {str(e)}")
+          logging.info(f'All TP orders in {symbol} were canceled.')
+          return
+        else:
+          logging.info(f"Position in {symbol} is still open.")
+        retry_count = 0
+      except Exception as e:
+        logging.error(f"Error fetching position: {str(e)}")
+        retry_count += 1
+        if retry_count >= max_retries:
+          logging.error(f"Max retries reached for {symbol}. Stopping position monitor.")
+          return
+        await asyncio.sleep(MONITOR_ORDER_TIME * retry_count)
+      
