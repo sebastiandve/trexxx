@@ -19,11 +19,17 @@ jobs:
         known_hosts: ${{ secrets.KNOWN_HOSTS }}
         if_key_exists: replace
 
+    - name: Add SSH key to agent
+      run: |
+        eval $(ssh-agent -s)
+        echo "${{ secrets.SERVER_SSH_KEY }}" | tr -d '\r' | ssh-add -
 
     - name: Deploy to DigitalOcean
       env:
         HOST: ${{ secrets.SERVER_HOST }}
       run: |
-        scp -r ./* root@$HOST:/root/
+        ssh-keyscan -H $HOST >> ~/.ssh/known_hosts
+        ssh -v root@$HOST 'echo "SSH connection successful"'
+        scp -v -r ./* root@$HOST:/root/
         ssh root@$HOST 'bash -s' < deploy_bot.sh
-        ssh root@$HOST systemctl restart trading-bot
+        ssh root@$HOST 'systemctl restart trading-bot'
