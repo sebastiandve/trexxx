@@ -66,7 +66,8 @@ async def process_signal(event):
           'enableRateLimit': True,
           'options': {'defaultType': 'swap'}
         })
-        exchange.set_sandbox_mode(True) # remove this in production
+        # exchange.set_sandbox_mode(True) # remove this in production
+        exchange.enable_demo_trading(True) # remove this in prod
         await exchange.load_markets()
 
         await place_order(exchange, order_side, symbol, leverage, entry, take_profit_prices)
@@ -79,7 +80,7 @@ async def process_signal(event):
 async def main():
   try:     
     await client.start(phone=PHONE_NUMBER)
-    logging.info("Bot is running. Version 1.1")
+    logging.info("Bot is running. Version 1.2")
     await client.run_until_disconnected()
   except Exception as e:
      logging.exception("Error in main function")

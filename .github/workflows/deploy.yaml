@@ -1,0 +1,26 @@
+name: Deploy Trading Bot
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Install SSH key
+      uses: shimataro/ssh-key-action@v2
+      with:
+        key: ${{ secrets.SERVER_SSH_KEY }}
+
+    - name: Deploy to DigitalOcean
+      env:
+        HOST: ${{ secrets.SERVER_HOST }}
+      run: |
+        scp -r ./* root@$HOST:/root/
+        ssh root@$HOST 'bash -s' < deploy_bot.sh
+        ssh root@$HOST systemctl restart trading-bot
