@@ -79,7 +79,7 @@ async def process_signal(event):
 async def main():
   try:     
     await client.start(phone=PHONE_NUMBER)
-    logging.info("Bot is running.")
+    logging.info("Bot is running. Version 1.1")
     await client.run_until_disconnected()
   except Exception as e:
      logging.exception("Error in main function")

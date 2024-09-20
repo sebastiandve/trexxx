@@ -46,6 +46,7 @@ async def place_order(exchange, side, symbol, leverage, price, take_profit_price
         remaining_quantity -= take_profit_quanitity
         take_profit_side = 'buy' if side == 'sell' else 'sell'
         try:
+          logging.info(f"TP qty: {take_profit_quanitity}")
           tp_order = await exchange.create_limit_order(symbol, take_profit_side, take_profit_quanitity, profit_price)
           tp_orders.append(tp_order)
           logging.info(f"{symbol} {take_profit_side} TP Order placed: {tp_order['id']} Qty: {take_profit_quanitity} Price: {profit_price}")
