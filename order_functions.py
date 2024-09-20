@@ -1,6 +1,8 @@
 import time
 import asyncio
 import logging
+from decimal import Decimal
+from ccxt.async_support import Exchange
 from ccxt.base.errors import OrderNotFound, BadRequest
 from config import STOP_LOSS_ROI, TAKE_PROFIT_PCTS, BALANCE_PCT, ORDER_EXPIRATION_TIME, MONITOR_ORDER_TIME
 
@@ -8,7 +10,7 @@ from config import STOP_LOSS_ROI, TAKE_PROFIT_PCTS, BALANCE_PCT, ORDER_EXPIRATIO
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-async def place_order(exchange, side, symbol, leverage, price, take_profit_prices):
+async def place_order(exchange: Exchange, side: str, symbol: str, leverage: int, price: float, take_profit_prices: list[float]):
     # Set leverage
     try:
       await exchange.set_leverage(leverage, symbol)
@@ -24,7 +26,7 @@ async def place_order(exchange, side, symbol, leverage, price, take_profit_price
     
     # Place the main order
     try:
-      order = await exchange.create_limit_order(symbol, side, quantity, price, params=params)
+      order = await exchange.create_limit_order(symbol, side, float(quantity), price, params=params)
       logging.info(f"{symbol} {side} Order placed: {order['id']} Qty: {quantity} Price: {price} StopLoss: {stop_loss_price}")
     except Exception as e:
       logging.error(f"Error placing main order: {str(e)}")
@@ -38,25 +40,29 @@ async def place_order(exchange, side, symbol, leverage, price, take_profit_price
       profit_pcts = TAKE_PROFIT_PCTS
       remaining_quantity = quantity
       for i, (profit_price, profit_pct) in enumerate(zip(take_profit_prices, profit_pcts)):
+        profit_pct = Decimal(str(profit_pct))
+
         if i == len(profit_pcts) - 1:
-          take_profit_quanitity = remaining_quantity
+          take_profit_quantity = remaining_quantity
         else:
-          take_profit_quanitity = float(exchange.amount_to_precision(symbol, quantity * profit_pct))
-           
-        remaining_quantity -= take_profit_quanitity
+          take_profit_quantity = float(exchange.amount_to_precision(symbol, quantity * profit_pct))
+          take_profit_quantity = Decimal(str(take_profit_quantity))
+
+
+        remaining_quantity -= take_profit_quantity
         take_profit_side = 'buy' if side == 'sell' else 'sell'
         try:
-          logging.info(f"TP qty: {take_profit_quanitity}")
-          tp_order = await exchange.create_limit_order(symbol, take_profit_side, take_profit_quanitity, profit_price)
+          logging.info(f"TP qty: {take_profit_quantity}")
+          tp_order = await exchange.create_limit_order(symbol, take_profit_side, float(take_profit_quantity), profit_price)
           tp_orders.append(tp_order)
-          logging.info(f"{symbol} {take_profit_side} TP Order placed: {tp_order['id']} Qty: {take_profit_quanitity} Price: {profit_price}")
+          logging.info(f"{symbol} {take_profit_side} TP Order placed: {tp_order['id']} Qty: {take_profit_quantity} Price: {profit_price}")
         except Exception as e:
           logging.error(f"Error placing TP order: {str(e)}")
       if abs(remaining_quantity) > 0:
             logging.warning(f"Remaining quantity after placing TP orders: {remaining_quantity}")
       await monitor_position(exchange, symbol, tp_orders)
 
-def calculate_stop_price(entry_price, roi, leverage, side):
+def calculate_stop_price(entry_price: float, roi: float, leverage: int, side: str) -> float:
     """
     Calculate the stop-loss price based on ROI, leverage, and position side.
 
@@ -82,15 +88,15 @@ def calculate_stop_price(entry_price, roi, leverage, side):
     return stop_price
 
 
-async def calculate_main_order_qty(exchange,leverage, price, symbol):
+async def calculate_main_order_qty(exchange: Exchange, leverage: int, price: float, symbol: str) -> Decimal:
   balance = await exchange.fetch_balance()
   usdt_balance = balance['USDT'] if 'USDT' in balance else None
   usdt_balance = usdt_balance['free']
   qty = (usdt_balance * BALANCE_PCT * leverage) / price
-  return float(exchange.amount_to_precision(symbol, qty))
+  return Decimal(str(exchange.amount_to_precision(symbol, qty)))
 
 
-async def monitor_order(exchange, order_id, symbol):
+async def monitor_order(exchange: Exchange, order_id: str, symbol: str) -> dict | None:
   status = 'open'
   start_time = time.time()
   while status not in ['closed', 'canceled', 'expired', 'rejected']:
@@ -120,7 +126,7 @@ async def monitor_order(exchange, order_id, symbol):
     return None
   
 
-async def monitor_position(exchange, symbol, tp_orders):
+async def monitor_position(exchange: Exchange, symbol: str, tp_orders: list[dict]):
    max_retries = 3
    retry_count = 0
    while True:
@@ -146,5 +152,5 @@ async def monitor_position(exchange, symbol, tp_orders):
         if retry_count >= max_retries:
           logging.error(f"Max retries reached for {symbol}. Stopping position monitor.")
           return
-        await asyncio.sleep(MONITOR_ORDER_TIME * retry_count)
+        await asyncio.sleep(MONITOR_ORDER_TIME ** retry_count)
       
