@@ -56,6 +56,7 @@ async def place_order(exchange: Exchange, side: str, symbol: str, leverage: int,
 
     if abs(remaining_quantity) > 0:
         logging.warning(f"Remaining quantity after placing orders: {remaining_quantity}")
+    await close_open_orders(exchange, symbol)
 
 
 async def calculate_main_order_qty(exchange: Exchange, leverage: int, price: float, symbol: str) -> Decimal:
@@ -120,4 +121,35 @@ def calculate_stop_price(entry_price: float, roi: float, leverage: int, side: st
         raise ValueError(f'Invalid order side: {side}. Use "buy" for long or "sell" for short.')
 
     return stop_price
+
+
+async def close_open_orders(exchange: Exchange, symbol: str):
+    max_retries = 5
+    retry_count = 0
+
+    while retry_count < max_retries:
+        await asyncio.sleep(MONITOR_ORDER_TIME)
+        try:
+            orders = await exchange.fetch_open_orders(symbol)
+            if not orders:
+                logging.info(f"No open orders in {symbol}")
+                return
+
+            now = time.time() * 1000
+            for order in orders:
+                if now - order['timestamp'] > ORDER_EXPIRATION_TIME and order['filled'] == 0:
+                    try:
+                        await exchange.cancel_order(order['id'], symbol)
+                        logging.info(f"Order {order['id']} in {symbol} was canceled")
+                    except Exception as e:
+                        logging.error(f"Error canceling order {order['id']}: {str(e)}")
+
+            retry_count = 0
+
+        except Exception as e:
+            logging.error(f"Error fetching open orders: {str(e)}")
+            retry_count += 1
+            await asyncio.sleep(60)
+
+    logging.warning(f"Max retries reached for closing open orders in {symbol}. Exiting function.")
 
