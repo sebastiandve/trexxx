@@ -17,75 +17,45 @@ async def place_order(exchange: Exchange, side: str, symbol: str, leverage: int,
     except BadRequest as e:
       logging.error(f"Error: {str(e)}")
 
-    # Calculate the amount
-    quantity = await calculate_main_order_qty(exchange, leverage, price, symbol)
+    # Calculate the total quantity
+    total_quantity = await calculate_main_order_qty(exchange, leverage, price, symbol)
 
     # Calculate stop loss price
     stop_loss_price = calculate_stop_price(price, STOP_LOSS_ROI, leverage, side)
-    params = {'stopLoss': {'type': 'market', 'triggerPrice': stop_loss_price}}
-    
-    # Place the main order
-    try:
-      order = await exchange.create_limit_order(symbol, side, float(quantity), price, params=params)
-      logging.info(f"{symbol} {side} Order placed: {order['id']} Qty: {quantity} Price: {price} StopLoss: {stop_loss_price}")
-    except Exception as e:
-      logging.error(f"Error placing main order: {str(e)}")
-      return
-    
-    # Wait for the main order to be filled
-    res = await monitor_order(exchange, order['id'], symbol)
-    if res:
-      # Place take profit orders
-      tp_orders = []
-      profit_pcts = TAKE_PROFIT_PCTS
-      remaining_quantity = quantity
-      for i, (profit_price, profit_pct) in enumerate(zip(take_profit_prices, profit_pcts)):
-        profit_pct = Decimal(str(profit_pct))
 
+    orders = []
+    remaining_quantity = total_quantity
+    profit_pcts = TAKE_PROFIT_PCTS
+
+    for i, (take_profit_price, profit_pct) in enumerate(zip(take_profit_prices, profit_pcts)):
         if i == len(profit_pcts) - 1:
-          take_profit_quantity = remaining_quantity
+            order_quantity = remaining_quantity
         else:
-          take_profit_quantity = float(exchange.amount_to_precision(symbol, quantity * profit_pct))
-          take_profit_quantity = Decimal(str(take_profit_quantity))
+            order_quantity = float(exchange.amount_to_precision(symbol, total_quantity * Decimal(str(profit_pct))))
+            order_quantity = Decimal(str(order_quantity))
 
+        remaining_quantity -= order_quantity
 
-        remaining_quantity -= take_profit_quantity
-        take_profit_side = 'buy' if side == 'sell' else 'sell'
+        params = {
+            'stopLoss': {
+               'type': 'market',
+               'triggerPrice': stop_loss_price
+            },
+            'takeProfit': {
+              'type': 'market',
+              'triggerPrice': take_profit_price
+            }
+        }
+
         try:
-          logging.info(f"TP qty: {take_profit_quantity}")
-          tp_order = await exchange.create_limit_order(symbol, take_profit_side, float(take_profit_quantity), profit_price)
-          tp_orders.append(tp_order)
-          logging.info(f"{symbol} {take_profit_side} TP Order placed: {tp_order['id']} Qty: {take_profit_quantity} Price: {profit_price}")
+            order = await exchange.create_limit_order(symbol, side, float(order_quantity), price, params=params)
+            orders.append(order)
+            logging.info(f"{symbol} {side} Order placed: {order['id']} Qty: {order_quantity} Price: {price} StopLoss: {stop_loss_price} TakeProfit: {take_profit_price}")
         except Exception as e:
-          logging.error(f"Error placing TP order: {str(e)}")
-      if abs(remaining_quantity) > 0:
-            logging.warning(f"Remaining quantity after placing TP orders: {remaining_quantity}")
-      await monitor_position(exchange, symbol, tp_orders)
+            logging.error(f"Error placing order: {str(e)}")
 
-def calculate_stop_price(entry_price: float, roi: float, leverage: int, side: str) -> float:
-    """
-    Calculate the stop-loss price based on ROI, leverage, and position side.
-
-    :param entry_price: The price at which the position was opened (float)
-    :param roi: The desired ROI as a percentage (can be negative for stop-loss) (float)
-    :param leverage: Leverage used for the position (float)
-    :param side: 'buy' for long, 'sell' for short (str)
-    :return: The stop-loss price (float)
-    """
-    
-    if roi >= 0:
-        raise ValueError("ROI should be negative for stop-loss calculations.")
-    
-    if side.lower() == 'buy':  # Long position
-        stop_price = entry_price * (1 + (roi / (100 * leverage)))
-    
-    elif side.lower() == 'sell':  # Short position
-        stop_price = entry_price * (1 - (roi / (100 * leverage)))
-    
-    else:
-        raise ValueError(f'Invalid order side: {side}. Use "buy" for long or "sell" for short.')
-
-    return stop_price
+    if abs(remaining_quantity) > 0:
+        logging.warning(f"Remaining quantity after placing orders: {remaining_quantity}")
 
 
 async def calculate_main_order_qty(exchange: Exchange, leverage: int, price: float, symbol: str) -> Decimal:
@@ -126,31 +96,28 @@ async def monitor_order(exchange: Exchange, order_id: str, symbol: str) -> dict 
     return None
   
 
-async def monitor_position(exchange: Exchange, symbol: str, tp_orders: list[dict]):
-   max_retries = 3
-   retry_count = 0
-   while True:
-      await asyncio.sleep(MONITOR_ORDER_TIME)
-      try:
-        position = await exchange.fetch_position(symbol)
-        if position['contracts'] == 0:
-          logging.info(f"Position in {symbol} was closed.")
-          for tp_order in tp_orders:
-             try:
-                await exchange.cancel_order(tp_order['id'], symbol)
-                logging.info(f"TP Order {tp_order['id']} in {symbol} was canceled.")
-             except OrderNotFound as e:
-                logging.error(f"Error canceling TP order: {str(e)}")
-          logging.info(f'All TP orders in {symbol} were canceled.')
-          return
-        else:
-          logging.info(f"Position in {symbol} is still open.")
-        retry_count = 0
-      except Exception as e:
-        logging.error(f"Error fetching position: {str(e)}")
-        retry_count += 1
-        if retry_count >= max_retries:
-          logging.error(f"Max retries reached for {symbol}. Stopping position monitor.")
-          return
-        await asyncio.sleep(MONITOR_ORDER_TIME ** retry_count)
-      
+def calculate_stop_price(entry_price: float, roi: float, leverage: int, side: str) -> float:
+    """
+    Calculate the stop-loss price based on ROI, leverage, and position side.
+
+    :param entry_price: The price at which the position was opened (float)
+    :param roi: The desired ROI as a percentage (can be negative for stop-loss) (float)
+    :param leverage: Leverage used for the position (float)
+    :param side: 'buy' for long, 'sell' for short (str)
+    :return: The stop-loss price (float)
+    """
+    
+    if roi >= 0:
+        raise ValueError("ROI should be negative for stop-loss calculations.")
+    
+    if side.lower() == 'buy':  # Long position
+        stop_price = entry_price * (1 + (roi / (100 * leverage)))
+    
+    elif side.lower() == 'sell':  # Short position
+        stop_price = entry_price * (1 - (roi / (100 * leverage)))
+    
+    else:
+        raise ValueError(f'Invalid order side: {side}. Use "buy" for long or "sell" for short.')
+
+    return stop_price
+
