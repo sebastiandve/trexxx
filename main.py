@@ -2,6 +2,7 @@ import os
 import asyncio
 import logging
 import ccxt.async_support as ccxt
+from decimal import Decimal
 from dotenv import load_dotenv
 from telethon import TelegramClient, events
 from order_functions import place_order
@@ -44,11 +45,11 @@ async def process_signal(event):
         # Parse the trade details from the message
         symbol = event.pattern_match.group(1)
         side = event.pattern_match.group(2)
+        order_side = 'Buy' if side == 'Long' else 'Sell'
         leverage = int(event.pattern_match.group(3))
-        entry = float(event.pattern_match.group(4))
-        take_profit_prices = [float(event.pattern_match.group(i)) for i in range(5, 9)]
+        entry = Decimal(str(event.pattern_match.group(4)))
+        take_profit_prices = [Decimal(str(event.pattern_match.group(i))) for i in range(5, 9)]
 
-        order_side = 'buy' if side == 'Long' else 'sell'
 
         base = symbol.split('/')[1]
         if base != 'USDT':
@@ -66,7 +67,6 @@ async def process_signal(event):
           'enableRateLimit': True,
           'options': {'defaultType': 'swap'}
         })
-        # exchange.set_sandbox_mode(True) # remove this in production
         exchange.enable_demo_trading(True) # remove this in prod
         await exchange.load_markets()
 

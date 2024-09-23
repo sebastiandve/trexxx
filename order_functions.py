@@ -10,7 +10,7 @@ from config import STOP_LOSS_ROI, TAKE_PROFIT_PCTS, BALANCE_PCT, ORDER_EXPIRATIO
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-async def place_order(exchange: Exchange, side: str, symbol: str, leverage: int, price: float, take_profit_prices: list[float]):
+async def place_order(exchange: Exchange, side: str, symbol: str, leverage: int, price: Decimal, take_profit_prices: list[Decimal]):
     # Set leverage
     try:
       await exchange.set_leverage(leverage, symbol)
@@ -21,7 +21,7 @@ async def place_order(exchange: Exchange, side: str, symbol: str, leverage: int,
     total_quantity = await calculate_main_order_qty(exchange, leverage, price, symbol)
 
     # Calculate stop loss price
-    stop_loss_price = calculate_stop_price(price, STOP_LOSS_ROI, leverage, side)
+    stop_loss_price = calculate_stop_price(price, Decimal(str(STOP_LOSS_ROI)), Decimal(str(leverage)), side)
 
     orders = []
     remaining_quantity = total_quantity
@@ -37,18 +37,27 @@ async def place_order(exchange: Exchange, side: str, symbol: str, leverage: int,
         remaining_quantity -= order_quantity
 
         params = {
-            'stopLoss': {
-               'type': 'market',
-               'triggerPrice': stop_loss_price
-            },
-            'takeProfit': {
-              'type': 'market',
-              'triggerPrice': take_profit_price
-            }
+          'category': 'linear',
+          'symbol': symbol,
+          'isLeverage': 1,
+          'side': side,
+          'orderType': 'Limit',
+          'qty': str(order_quantity),
+          'marketUnit': 'quoteCoin',
+          'price': str(price),
+
+          'tpslMode': 'Partial',
+
+          'takeProfit': str(take_profit_price),
+          'tpOrderType': 'Market',
+
+          'stopLoss': str(stop_loss_price),
+          'slOrderType': 'Market',
         }
 
         try:
-            order = await exchange.create_limit_order(symbol, side, float(order_quantity), price, params=params)
+            order = await exchange.private_post_v5_order_create(params)
+            
             orders.append(order)
             logging.info(f"{symbol} {side} Order placed: {order['id']} Qty: {order_quantity} Price: {price} StopLoss: {stop_loss_price} TakeProfit: {take_profit_price}")
         except Exception as e:
@@ -59,11 +68,11 @@ async def place_order(exchange: Exchange, side: str, symbol: str, leverage: int,
     await close_open_orders(exchange, symbol)
 
 
-async def calculate_main_order_qty(exchange: Exchange, leverage: int, price: float, symbol: str) -> Decimal:
+async def calculate_main_order_qty(exchange: Exchange, leverage: int, price: Decimal, symbol: str) -> Decimal:
   balance = await exchange.fetch_balance()
   usdt_balance = balance['USDT'] if 'USDT' in balance else None
   usdt_balance = usdt_balance['free']
-  qty = (usdt_balance * BALANCE_PCT * leverage) / price
+  qty = Decimal(str(usdt_balance * BALANCE_PCT * leverage)) / price
   return Decimal(str(exchange.amount_to_precision(symbol, qty)))
 
 
@@ -97,7 +106,7 @@ async def monitor_order(exchange: Exchange, order_id: str, symbol: str) -> dict 
     return None
   
 
-def calculate_stop_price(entry_price: float, roi: float, leverage: int, side: str) -> float:
+def calculate_stop_price(entry_price: Decimal, roi: Decimal, leverage: Decimal, side: str) -> float:
     """
     Calculate the stop-loss price based on ROI, leverage, and position side.
 
@@ -111,14 +120,14 @@ def calculate_stop_price(entry_price: float, roi: float, leverage: int, side: st
     if roi >= 0:
         raise ValueError("ROI should be negative for stop-loss calculations.")
     
-    if side.lower() == 'buy':  # Long position
+    if side.lower() == 'Buy':  # Long position
         stop_price = entry_price * (1 + (roi / (100 * leverage)))
     
-    elif side.lower() == 'sell':  # Short position
+    elif side.lower() == 'Sell':  # Short position
         stop_price = entry_price * (1 - (roi / (100 * leverage)))
     
     else:
-        raise ValueError(f'Invalid order side: {side}. Use "buy" for long or "sell" for short.')
+        raise ValueError(f'Invalid order side: {side}. Use "Buy" for long or "Sell" for short.')
 
     return stop_price
 

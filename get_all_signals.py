@@ -15,6 +15,19 @@ PHONE_NUMBER = os.getenv('PHONE_NUMBER')
 session_file = 'my_telegram.session'
 target_group = 1001717037581
 
+async def get_last_n_messages(client, n):
+    messages = []
+    
+    # Get the entity (group) object
+    entity = await client.get_entity(target_group)
+    
+    # Fetch the last n messages
+    async for message in client.iter_messages(entity, limit=n):
+        print(message.message)
+        messages.append(message)
+    
+    return messages
+
 async def get_all_messages(client):
     messages = []
     
@@ -70,9 +83,11 @@ async def main():
     #     if dialog['type'] in ['Channel', 'Group']:
     #         print(f"ID: {dialog['id']}, Name: {dialog['name']}, Type: {dialog['type']}")
     
-    all_messages = await get_all_messages(client)
-    print(f'Total messages retrieved: {len(all_messages)}')
-    
+    # all_messages = await get_all_messages(client)
+    # print(f'Total messages retrieved: {len(all_messages)}')
+
+    messages = await get_last_n_messages(client, 20)
+
     df = pd.DataFrame([
         {
             'id': msg.id,
@@ -84,10 +99,10 @@ async def main():
             'forwards': msg.forwards,
             'edit_date': msg.edit_date,
 
-        } for msg in all_messages
+        } for msg in messages
     ])
 
-    csv_filename = 'telegram_messages.csv'
+    csv_filename = 'last_telegram_messages.csv'
     df.to_csv(csv_filename, index=False)
     print(f'Messages saved to {csv_filename}')
     
