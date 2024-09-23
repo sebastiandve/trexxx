@@ -66,9 +66,9 @@ async def place_order(exchange: Exchange, side: str, symbol: str, leverage: int,
             order = await exchange.private_post_v5_order_create(params)
             
             orders.append(order)
-            logging.info(f"{symbol} {side} Order placed: {order['id']} Qty: {order_quantity} Price: {entry_price} StopLoss: {stop_loss_price} TakeProfit: {take_profit_price}")
+            logging.info(f"{symbol} {side} Order placed: {order['result']['orderId']} Qty: {order_quantity} Price: {entry_price} StopLoss: {stop_loss_price} TakeProfit: {take_profit_price}")
         except Exception as e:
-            logging.error(f"Error placing order: {str(e)}")
+            logging.error(f"Error placing order: {str(e)}", exc_info=True)
 
     if abs(remaining_quantity) > 0:
         logging.warning(f"Remaining quantity after placing orders: {remaining_quantity}")
@@ -120,17 +120,14 @@ def calculate_price(entry_price: Decimal, roi: Decimal, leverage: Decimal, side:
     :param entry_price: The price at which the position was opened (float)
     :param roi: The desired ROI as a percentage (can be negative for stop-loss) (float)
     :param leverage: Leverage used for the position (float)
-    :param side: 'buy' for long, 'sell' for short (str)
-    :return: The stop-loss price (float)
+    :param side: 'Buy' for long, 'Sell' for short (str)
+    :return: The price (float)
     """
-    
-    if roi >= 0:
-        raise ValueError("ROI should be negative for stop-loss calculations.")
-    
-    if side.lower() == 'Buy':  # Long position
+
+    if side.lower() == 'buy':  # Long position
         stop_price = entry_price * (1 + (roi / (100 * leverage)))
     
-    elif side.lower() == 'Sell':  # Short position
+    elif side.lower() == 'sell':  # Short position
         stop_price = entry_price * (1 - (roi / (100 * leverage)))
     
     else:

@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from telethon import TelegramClient, events
 from order_functions import place_order
 
-load_dotenv('.env')
+load_dotenv('.env', override=True)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
