@@ -4,13 +4,13 @@ import logging
 from decimal import Decimal
 from ccxt.async_support import Exchange
 from ccxt.base.errors import OrderNotFound, BadRequest
-from config import STOP_LOSS_ROI, TAKE_PROFIT_PCTS, BALANCE_PCT, ORDER_EXPIRATION_TIME, MONITOR_ORDER_TIME
+from config import LEVELS, BALANCE_PCT, ORDER_EXPIRATION_TIME, MONITOR_ORDER_TIME
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-async def place_order(exchange: Exchange, side: str, symbol: str, leverage: int, price: Decimal, take_profit_prices: list[Decimal]):
+async def place_order(exchange: Exchange, side: str, symbol: str, leverage: int, entry_price: Decimal):
     # Set leverage
     try:
       await exchange.set_leverage(leverage, symbol)
@@ -18,23 +18,31 @@ async def place_order(exchange: Exchange, side: str, symbol: str, leverage: int,
       logging.error(f"Error: {str(e)}")
 
     # Calculate the total quantity
-    total_quantity = await calculate_main_order_qty(exchange, leverage, price, symbol)
+    total_quantity = await calculate_main_order_qty(exchange, leverage, entry_price, symbol)
 
-    # Calculate stop loss price
-    stop_loss_price = calculate_stop_price(price, Decimal(str(STOP_LOSS_ROI)), Decimal(str(leverage)), side)
 
     orders = []
     remaining_quantity = total_quantity
-    profit_pcts = TAKE_PROFIT_PCTS
 
-    for i, (take_profit_price, profit_pct) in enumerate(zip(take_profit_prices, profit_pcts)):
-        if i == len(profit_pcts) - 1:
+    for i, level in enumerate(LEVELS):
+        qty_pct = Decimal(str(level['qty_pct']))
+        roiTP = Decimal(str(level['roiTP']))
+        roiSL = Decimal(str(level['roiSL']))
+
+        if i == len(LEVELS) - 1:
             order_quantity = remaining_quantity
         else:
-            order_quantity = float(exchange.amount_to_precision(symbol, total_quantity * Decimal(str(profit_pct))))
+            order_quantity = float(exchange.amount_to_precision(symbol, total_quantity * qty_pct))
             order_quantity = Decimal(str(order_quantity))
 
         remaining_quantity -= order_quantity
+
+        # Calculate stop loss price
+        stop_loss_price = calculate_price(entry_price, roiSL, Decimal(str(leverage)), side)
+
+        # Calculate take profit price
+        take_profit_price = calculate_price(entry_price, roiTP, Decimal(str(leverage)), side)
+
 
         params = {
           'category': 'linear',
@@ -43,8 +51,7 @@ async def place_order(exchange: Exchange, side: str, symbol: str, leverage: int,
           'side': side,
           'orderType': 'Limit',
           'qty': str(order_quantity),
-          'marketUnit': 'quoteCoin',
-          'price': str(price),
+          'price': str(entry_price),
 
           'tpslMode': 'Partial',
 
@@ -59,7 +66,7 @@ async def place_order(exchange: Exchange, side: str, symbol: str, leverage: int,
             order = await exchange.private_post_v5_order_create(params)
             
             orders.append(order)
-            logging.info(f"{symbol} {side} Order placed: {order['id']} Qty: {order_quantity} Price: {price} StopLoss: {stop_loss_price} TakeProfit: {take_profit_price}")
+            logging.info(f"{symbol} {side} Order placed: {order['id']} Qty: {order_quantity} Price: {entry_price} StopLoss: {stop_loss_price} TakeProfit: {take_profit_price}")
         except Exception as e:
             logging.error(f"Error placing order: {str(e)}")
 
@@ -106,9 +113,9 @@ async def monitor_order(exchange: Exchange, order_id: str, symbol: str) -> dict 
     return None
   
 
-def calculate_stop_price(entry_price: Decimal, roi: Decimal, leverage: Decimal, side: str) -> float:
+def calculate_price(entry_price: Decimal, roi: Decimal, leverage: Decimal, side: str) -> float:
     """
-    Calculate the stop-loss price based on ROI, leverage, and position side.
+    Calculate the price based on ROI, leverage, and position side.
 
     :param entry_price: The price at which the position was opened (float)
     :param roi: The desired ROI as a percentage (can be negative for stop-loss) (float)

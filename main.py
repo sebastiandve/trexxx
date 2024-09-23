@@ -48,7 +48,7 @@ async def process_signal(event):
         order_side = 'Buy' if side == 'Long' else 'Sell'
         leverage = int(event.pattern_match.group(3))
         entry = Decimal(str(event.pattern_match.group(4)))
-        take_profit_prices = [Decimal(str(event.pattern_match.group(i))) for i in range(5, 9)]
+        # take_profit_prices = [Decimal(str(event.pattern_match.group(i))) for i in range(5, 9)]
 
 
         base = symbol.split('/')[1]
@@ -70,7 +70,7 @@ async def process_signal(event):
         exchange.enable_demo_trading(True) # remove this in prod
         await exchange.load_markets()
 
-        await place_order(exchange, order_side, symbol, leverage, entry, take_profit_prices)
+        await place_order(exchange, order_side, symbol, leverage, entry)
 
         await exchange.close()
     except Exception:
