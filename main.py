@@ -46,7 +46,7 @@ async def process_signal(event):
         symbol = event.pattern_match.group(1)
         side = event.pattern_match.group(2)
         order_side = 'Buy' if side == 'Long' else 'Sell'
-        leverage = int(event.pattern_match.group(3))
+        leverage = Decimal(str(event.pattern_match.group(3)))
         entry = Decimal(str(event.pattern_match.group(4)))
         # take_profit_prices = [Decimal(str(event.pattern_match.group(i))) for i in range(5, 9)]
 
@@ -80,7 +80,7 @@ async def process_signal(event):
 async def main():
   try:     
     await client.start(phone=PHONE_NUMBER)
-    logging.info("Bot is running. Version 1.2")
+    logging.info("Bot is running. Version 1.3")
     await client.run_until_disconnected()
   except Exception as e:
      logging.exception("Error in main function")

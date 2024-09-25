@@ -1,6 +1,7 @@
 screenshot.png
 .env*
 .DS_Store
+.vscode
 *.session
 *.session-journal
 telegram_messages.csv

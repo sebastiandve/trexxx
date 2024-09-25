@@ -4,13 +4,13 @@ import logging
 from decimal import Decimal
 from ccxt.async_support import Exchange
 from ccxt.base.errors import OrderNotFound, BadRequest
-from config import LEVELS, BALANCE_PCT, ORDER_EXPIRATION_TIME, MONITOR_ORDER_TIME
+from config import LEVELS, BALANCE_PCT, ORDER_EXPIRATION_TIME, MONITOR_ORDER_TIME, TRAILING_SL_ROI
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-async def place_order(exchange: Exchange, side: str, symbol: str, leverage: int, entry_price: Decimal):
+async def place_order(exchange: Exchange, side: str, symbol: str, leverage: Decimal, entry_price: Decimal):
     # Set leverage
     try:
       await exchange.set_leverage(leverage, symbol)
@@ -38,10 +38,10 @@ async def place_order(exchange: Exchange, side: str, symbol: str, leverage: int,
         remaining_quantity -= order_quantity
 
         # Calculate stop loss price
-        stop_loss_price = calculate_price(entry_price, roiSL, Decimal(str(leverage)), side)
+        stop_loss_price = calculate_price(entry_price, roiSL, leverage, side)
 
         # Calculate take profit price
-        take_profit_price = calculate_price(entry_price, roiTP, Decimal(str(leverage)), side)
+        take_profit_price = calculate_price(entry_price, roiTP, leverage, side)
 
 
         params = {
@@ -57,14 +57,16 @@ async def place_order(exchange: Exchange, side: str, symbol: str, leverage: int,
 
           'takeProfit': str(take_profit_price),
           'tpOrderType': 'Market',
-
           'stopLoss': str(stop_loss_price),
-          'slOrderType': 'Market',
+          'slOrderType': 'Market'
         }
 
+        if i == 1:
+           tsl_activation_price = take_profit_price
+
+        # Create main orders with TP and SL
         try:
             order = await exchange.private_post_v5_order_create(params)
-            
             orders.append(order)
             logging.info(f"{symbol} {side} Order placed: {order['result']['orderId']} Qty: {order_quantity} Price: {entry_price} StopLoss: {stop_loss_price} TakeProfit: {take_profit_price}")
         except Exception as e:
@@ -72,14 +74,16 @@ async def place_order(exchange: Exchange, side: str, symbol: str, leverage: int,
 
     if abs(remaining_quantity) > 0:
         logging.warning(f"Remaining quantity after placing orders: {remaining_quantity}")
-    await close_open_orders(exchange, symbol)
+
+    asyncio.create_task(monitor_position(exchange, symbol, tsl_activation_price, leverage, side))
+    asyncio.create_task(close_open_orders(exchange, symbol))
 
 
-async def calculate_main_order_qty(exchange: Exchange, leverage: int, price: Decimal, symbol: str) -> Decimal:
+async def calculate_main_order_qty(exchange: Exchange, leverage: Decimal, price: Decimal, symbol: str) -> Decimal:
   balance = await exchange.fetch_balance()
   usdt_balance = balance['USDT'] if 'USDT' in balance else None
   usdt_balance = usdt_balance['free']
-  qty = Decimal(str(usdt_balance * BALANCE_PCT * leverage)) / price
+  qty = (Decimal(str(usdt_balance)) * Decimal(str(BALANCE_PCT)) * leverage) / price
   return Decimal(str(exchange.amount_to_precision(symbol, qty)))
 
 
@@ -113,15 +117,15 @@ async def monitor_order(exchange: Exchange, order_id: str, symbol: str) -> dict 
     return None
   
 
-def calculate_price(entry_price: Decimal, roi: Decimal, leverage: Decimal, side: str) -> float:
+def calculate_price(entry_price: Decimal, roi: Decimal, leverage: Decimal, side: str) -> Decimal:
     """
     Calculate the price based on ROI, leverage, and position side.
 
-    :param entry_price: The price at which the position was opened (float)
-    :param roi: The desired ROI as a percentage (can be negative for stop-loss) (float)
-    :param leverage: Leverage used for the position (float)
+    :param entry_price: The price at which the position was opened (Decimal)
+    :param roi: The desired ROI as a percentage (can be negative for stop-loss) (Decimal)
+    :param leverage: Leverage used for the position (Decimal)
     :param side: 'Buy' for long, 'Sell' for short (str)
-    :return: The price (float)
+    :return: The price (Decimal)
     """
 
     if side.lower() == 'buy':  # Long position
@@ -166,3 +170,43 @@ async def close_open_orders(exchange: Exchange, symbol: str):
 
     logging.warning(f"Max retries reached for closing open orders in {symbol}. Exiting function.")
 
+
+async def add_trailing_stop_loss(exchange: Exchange, symbol: str, activation_price: Decimal, leverage: Decimal, side: str):
+    trailing_stop_price = calculate_price(activation_price, Decimal(str(TRAILING_SL_ROI)), leverage, side)
+    ts_params = {
+      'category': 'linear',
+      'symbol': symbol,
+      'activePrice': str(activation_price),
+      'trailingStop': str(activation_price - trailing_stop_price),
+    }
+    await exchange.private_post_v5_position_trading_stop(ts_params)
+    logging.info(f"Trailing stop loss order placed for {symbol} at {trailing_stop_price} activation price: {activation_price}")
+
+
+async def monitor_position(exchange: Exchange, symbol: str, tsl_activation_price: Decimal, leverage: Decimal, side: str):
+    max_retries = 5
+    retry_count = 0
+    await asyncio.sleep(30)
+    while retry_count < max_retries:
+      try:
+        position = await exchange.fetch_position(symbol)
+        if position['contracts'] != 0:
+          await add_trailing_stop_loss(exchange, symbol, tsl_activation_price, leverage, side)
+          return
+        else:
+          logging.info(f"No trailing stop loss added for {symbol} because position not open yet")
+        
+        orders = await exchange.fetch_open_orders(symbol)
+        if not orders and position['contracts'] == 0:
+           logging.info(f"No open orders in {symbol} and position is closed")
+           return
+        
+        await asyncio.sleep(MONITOR_ORDER_TIME)
+        retry_count = 0
+      except Exception as e:
+        logging.error(f"Error monitoring position: {str(e)}", exc_info=True)
+        retry_count += 1
+        await asyncio.sleep(MONITOR_ORDER_TIME * retry_count * 2)
+
+    logging.warning(f"Max retries reached for monitoring position in {symbol}. Exiting function.")
+       
