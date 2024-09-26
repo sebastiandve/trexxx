@@ -55,12 +55,12 @@ async def place_order(exchange: Exchange, side: str, symbol: str, leverage: Deci
 
           'tpslMode': 'Partial',
 
-          'takeProfit': str(take_profit_price),
-          'tpOrderType': 'Market',
           'stopLoss': str(stop_loss_price),
           'slOrderType': 'Market'
         }
-
+        if i > 0: # Risky order does not have TP but uses trailing stop loss
+          params['takeProfit'] = str(take_profit_price)
+          params['tpOrderType'] = 'Market'
         if i == 1:
            tsl_activation_price = take_profit_price
 
