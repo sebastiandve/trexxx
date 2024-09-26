@@ -1,7 +1,7 @@
 LEVELS = [
-  {'qty_pct': 0.2, 'roiTP': 100, 'roiSL': -150},
-  {'qty_pct': 0.3, 'roiTP': 80, 'roiSL': -100},
-  {'qty_pct': 0.5, 'roiTP': 60, 'roiSL': -50},
+  {'qty_pct': 0.2, 'roiTP': 100, 'roiSL': -75},
+  {'qty_pct': 0.3, 'roiTP': 80, 'roiSL': -50},
+  {'qty_pct': 0.5, 'roiTP': 60, 'roiSL': -25},
 ]
 TRAILING_SL_ROI = -50
 BALANCE_PCT = 0.02
