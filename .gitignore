@@ -1,5 +1,7 @@
 screenshot.png
 .env*
+.idea
+.python-version
 .DS_Store
 .vscode
 *.session
