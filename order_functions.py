@@ -40,8 +40,6 @@ async def place_order(exchange: Exchange, side: str, symbol: str, leverage: Deci
         # Calculate stop loss price
         stop_loss_price = calculate_price(entry_price, roiSL, leverage, side)
 
-        # Calculate take profit price
-        take_profit_price = calculate_price(entry_price, roiTP, leverage, side)
 
 
         params = {
@@ -59,6 +57,7 @@ async def place_order(exchange: Exchange, side: str, symbol: str, leverage: Deci
           'slOrderType': 'Market'
         }
         if i > 0: # Risky order does not have TP but uses trailing stop loss
+          take_profit_price = calculate_price(entry_price, roiTP, leverage, side)
           params['takeProfit'] = str(take_profit_price)
           params['tpOrderType'] = 'Market'
         if i == 1: # Activation price for trailing stop loss is the TP of the 2nd riskiest order
