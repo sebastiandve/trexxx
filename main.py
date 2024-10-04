@@ -68,6 +68,7 @@ async def process_signal(event):
           'options': {'defaultType': 'swap'}
         })
         exchange.enable_demo_trading(True) # remove this in prod
+        # exchange.set_sandbox_mode(True)
         await exchange.load_markets()
 
         await place_order(exchange, order_side, symbol, leverage, entry)

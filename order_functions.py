@@ -26,9 +26,8 @@ async def place_order(exchange: Exchange, side: str, symbol: str, leverage: Deci
 
     for i, level in enumerate(LEVELS):
         qty_pct = Decimal(str(level['qty_pct']))
-        roiTP = Decimal(str(level['roiTP']))
         roiSL = Decimal(str(level['roiSL']))
-
+        roiTP = Decimal(str(level['roiTP']))
         if i == len(LEVELS) - 1:
             order_quantity = remaining_quantity
         else:
@@ -39,6 +38,7 @@ async def place_order(exchange: Exchange, side: str, symbol: str, leverage: Deci
 
         # Calculate stop loss price
         stop_loss_price = calculate_price(entry_price, roiSL, leverage, side)
+        take_profit_price = calculate_price(entry_price, roiTP, leverage, side)
 
 
 
@@ -57,7 +57,6 @@ async def place_order(exchange: Exchange, side: str, symbol: str, leverage: Deci
           'slOrderType': 'Market'
         }
         if i > 0: # Risky order does not have TP but uses trailing stop loss
-          take_profit_price = calculate_price(entry_price, roiTP, leverage, side)
           params['takeProfit'] = str(take_profit_price)
           params['tpOrderType'] = 'Market'
         if i == 1: # Activation price for trailing stop loss is the TP of the 2nd riskiest order
